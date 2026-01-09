@@ -33,11 +33,7 @@ X_test = scaler.transform(X_test)
 
 
 # Model
-model = RandomForestRegressor(
-    n_estimators=100,
-    max_depth=15,
-    random_state=42
-)
+model = LinearRegression()
 model.fit(X_train, y_train)
 
 # Predictions
