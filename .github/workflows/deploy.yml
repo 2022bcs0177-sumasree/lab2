@@ -1,0 +1,87 @@
+name: ML Inference CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+
+  # =========================
+  # JOB 1: TRAIN (CI)
+  # =========================
+  train:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install Dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Train Model
+      run: |
+        python train.py
+
+    - name: Verify Output Files
+      run: |
+        ls -R output
+
+    - name: Upload Model & Metrics Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: model-artifacts
+        path: |
+          output/model/trained_model.pkl
+          output/results/metrics.json
+
+  # =========================
+  # JOB 2: DEPLOY (CD)
+  # =========================
+  deploy:
+    needs: train
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: model-artifacts
+
+    - name: Read Metrics
+      run: |
+        echo "F1=$(jq -r '.f1' output/results/metrics.json)" >> $GITHUB_ENV
+        echo "MSE=$(jq -r '.mse' output/results/metrics.json)" >> $GITHUB_ENV
+
+    - name: Compare Metrics
+      run: |
+        echo "Current F1: $F1"
+        echo "Best F1: ${{ vars.BEST_F1 }}"
+
+        if (( $(echo "$F1 <= ${{ vars.BEST_F1 }}" | bc -l) )); then
+          echo "2022BCS0177 ---- Metric did not improve"
+          exit 0
+        fi
+
+    - name: Docker Login
+      run: |
+        echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
+        -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+    - name: Build Docker Image
+      run: |
+        docker build -t sumasree2028/wine-api:latest .
+
+    - name: Push Docker Image
+      run: |
+        docker push sumasree2028/wine-api:latest
